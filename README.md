@@ -52,7 +52,52 @@ plugin is what actually guarantees the field is protected.
 
 See `docs/config-schema.md` for the full table schema and a sample configuration.
 
-## Building locally
+## Importable solution package
+
+The `solution/FieldLockConfig` directory is a [Power Platform CLI](https://learn.microsoft.com/power-platform/developer/cli/introduction)
+(`pac`) solution project containing:
+
+- The `cfg_fieldlockrule` / `cfg_lockedfield` tables (with their forms/views), owned by a
+  dedicated `cfg`-prefixed publisher (`ContosoConfig`).
+- The compiled, strong-named `FieldLockPlugin.dll` registered as a plugin assembly, plus
+  the `Contoso.Dataverse.Plugins.FieldLockEnforcer` plugin type.
+
+Build it into an importable zip:
+
+```bash
+dotnet restore solution/FieldLockConfig/FieldLockConfig.cdsproj
+dotnet build solution/FieldLockConfig/FieldLockConfig.cdsproj -c Release
+```
+
+This produces `solution/FieldLockConfig/bin/Release/FieldLockConfig.zip` (unmanaged) and
+`FieldLockConfig_managed.zip` (managed), both of which CI also publishes as build
+artifacts and release assets (see `.github/workflows/build.yml`).
+
+Import either zip via the maker portal (**Solutions → Import solution**) or:
+
+```bash
+pac solution import --path solution/FieldLockConfig/bin/Release/FieldLockConfig_managed.zip
+```
+
+> **Note on updating the plugin assembly**: `pac solution add-reference` (which lets a
+> solution project auto-rebuild a referenced plugin project) only works with plugin
+> projects created via `pac plugin init`'s "Plugin Package" project format. Since
+> `src/FieldLockPlugin.csproj` is a plain SDK-style class library targeting the classic
+> (non-isolated) plugin model, the compiled DLL is checked into
+> `solution/FieldLockConfig/src/PluginAssemblies/.../FieldLockPlugin.dll` instead. CI
+> automatically overwrites that checked-in copy with the freshly built DLL before
+> packing, so released solution zips always contain the latest code — but if you build
+> the solution project locally after changing `FieldLockEnforcer.cs`, remember to
+> rebuild `src/FieldLockPlugin.csproj` first and copy the new DLL over that path (or
+> just let CI produce the release artifact for you).
+>
+> Note: the plugin's `SdkMessageProcessingStep` (the actual `Update` registration) and
+> its `PreImage` are intentionally **not** included in this solution, since they're
+> specific to whichever target entity/entities you're locking fields on in your
+> environment. Register those yourself per the steps below once the solution is
+> imported.
+
+## Building the plugin locally
 
 Requirements: .NET SDK 8.0+ (used only to drive the `net462` build; the compiled
 assembly still targets .NET Framework 4.6.2, which is required for Dataverse

@@ -5,7 +5,8 @@
     <AssemblyName>FieldLockPlugin</AssemblyName>
     <RootNamespace>Contoso.Dataverse.Plugins</RootNamespace>
     <LangVersion>latest</LangVersion>
-    <SignAssembly>false</SignAssembly>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>FieldLockPlugin.snk</AssemblyOriginatorKeyFile>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Deterministic>true</Deterministic>
   </PropertyGroup>

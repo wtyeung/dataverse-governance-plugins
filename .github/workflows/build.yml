@@ -44,12 +44,38 @@ jobs:
           name: FieldLockPlugin-dll
           path: ${{ steps.locate.outputs.dll_path }}
 
+      - name: Sync freshly-built plugin DLL into solution project
+        shell: pwsh
+        run: |
+          $target = Get-ChildItem -Path "solution/FieldLockConfig/src/PluginAssemblies" -Filter "FieldLockPlugin.dll" -Recurse | Select-Object -First 1
+          if (-not $target) {
+            throw "Could not find FieldLockPlugin.dll placeholder under solution/FieldLockConfig/src/PluginAssemblies."
+          }
+          Copy-Item -Path "${{ steps.locate.outputs.dll_path }}" -Destination $target.FullName -Force
+
+      - name: Restore solution project
+        run: dotnet restore solution/FieldLockConfig/FieldLockConfig.cdsproj
+
+      - name: Build solution package
+        run: dotnet build solution/FieldLockConfig/FieldLockConfig.cdsproj -c Release --no-restore
+
+      - name: Upload solution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FieldLockConfig-solution
+          path: |
+            solution/FieldLockConfig/bin/Release/FieldLockConfig.zip
+            solution/FieldLockConfig/bin/Release/FieldLockConfig_managed.zip
+
       - name: Create release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: v1.0.${{ github.run_number }}
-          files: ${{ steps.locate.outputs.dll_path }}
+          files: |
+            ${{ steps.locate.outputs.dll_path }}
+            solution/FieldLockConfig/bin/Release/FieldLockConfig.zip
+            solution/FieldLockConfig/bin/Release/FieldLockConfig_managed.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

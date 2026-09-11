@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<EntityRelationships xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <EntityRelationship Name="cfg_fieldlockrule_cfg_lockedfield" />
+  <EntityRelationship Name="lk_cfg_fieldlockrule_createdby" />
+  <EntityRelationship Name="lk_cfg_fieldlockrule_modifiedby" />
+  <EntityRelationship Name="lk_cfg_lockedfield_createdby" />
+  <EntityRelationship Name="lk_cfg_lockedfield_modifiedby" />
+  <EntityRelationship Name="organization_cfg_fieldlockrule" />
+  <EntityRelationship Name="organization_cfg_lockedfield" />
+</EntityRelationships>
