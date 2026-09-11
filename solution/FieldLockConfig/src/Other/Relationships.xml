@@ -5,6 +5,9 @@
   <EntityRelationship Name="lk_cfg_fieldlockrule_modifiedby" />
   <EntityRelationship Name="lk_cfg_lockedfield_createdby" />
   <EntityRelationship Name="lk_cfg_lockedfield_modifiedby" />
+  <EntityRelationship Name="lk_cfg_statetransitiondefinition_createdby" />
+  <EntityRelationship Name="lk_cfg_statetransitiondefinition_modifiedby" />
   <EntityRelationship Name="organization_cfg_fieldlockrule" />
   <EntityRelationship Name="organization_cfg_lockedfield" />
+  <EntityRelationship Name="organization_cfg_statetransitiondefinition" />
 </EntityRelationships>

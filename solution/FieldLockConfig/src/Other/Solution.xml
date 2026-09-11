@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<ImportExportXml version="9.2.26083.157" SolutionPackageVersion="9.2" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.26083.157" OrganizationSchemaType="Standard" CRMServerServiceabilityVersion="9.2.26084.00147">
+<ImportExportXml version="9.2.26083.157" SolutionPackageVersion="9.2" languagecode="1033" generatedBy="CrmLive" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.26083.157" OrganizationSchemaType="Standard" CRMServerServiceabilityVersion="9.2.26084.00149">
   <SolutionManifest>
     <UniqueName>FieldLockConfig</UniqueName>
     <LocalizedNames>
@@ -84,6 +84,7 @@
     <RootComponents>
       <RootComponent type="1" schemaName="cfg_fieldlockrule" behavior="0" />
       <RootComponent type="1" schemaName="cfg_lockedfield" behavior="0" />
+      <RootComponent type="1" schemaName="cfg_statetransitiondefinition" behavior="0" />
       <RootComponent type="91" id="{7960bbb6-edad-f111-aaac-000d3ac8af30}" schemaName="FieldLockPlugin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=2d358c4736d52dcb" behavior="0" />
     </RootComponents>
     <MissingDependencies />

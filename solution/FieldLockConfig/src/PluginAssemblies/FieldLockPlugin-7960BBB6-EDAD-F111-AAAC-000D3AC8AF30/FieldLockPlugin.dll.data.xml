@@ -8,5 +8,8 @@
     <PluginType AssemblyQualifiedName="Contoso.Dataverse.Plugins.FieldLockEnforcer, FieldLockPlugin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=2d358c4736d52dcb" PluginTypeId="7e60bbb6-edad-f111-aaac-000d3ac8af30" Name="Contoso.Dataverse.Plugins.FieldLockEnforcer">
       <FriendlyName>FieldLockEnforcer</FriendlyName>
     </PluginType>
+    <PluginType AssemblyQualifiedName="Contoso.Dataverse.Plugins.StateTransitionEnforcer, FieldLockPlugin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=2d358c4736d52dcb" PluginTypeId="d83a023a-f6ad-f111-aaac-6045bd1e8fea" Name="Contoso.Dataverse.Plugins.StateTransitionEnforcer">
+      <FriendlyName>StateTransitionEnforcer</FriendlyName>
+    </PluginType>
   </PluginTypes>
 </PluginAssembly>

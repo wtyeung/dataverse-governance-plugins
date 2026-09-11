@@ -1,18 +1,29 @@
-# Dataverse Field Lock Plugin
+# Dataverse Governance Plugins
 
-A config-driven Microsoft Dataverse plugin that enforces field-level locking based
-on record status (`statuscode`). Lock rules live in Dataverse tables rather than in
-code, so administrators can add, change, or disable a rule without a plugin
-redeployment.
+Config-driven Microsoft Dataverse plugins that enforce field-level locking and
+status-transition rules based on record status (`statuscode`). Rules live in
+Dataverse tables rather than in code, so administrators can add, change, or
+disable a rule without a plugin redeployment.
 
 ## Purpose
 
 Many Dataverse solutions need to prevent certain fields from being edited once a
 record reaches a given status (e.g. you shouldn't be able to change the `Amount` on
-a claim once it's `Pending Approval`). Doing this with hardcoded plugin logic means
-every new rule requires a code change, a rebuild, and a redeploy. This project
-externalizes that logic into two configuration tables so business rules can evolve
-independently of the plugin binary.
+a claim once it's `Pending Approval`), and to prevent records from being moved
+into an invalid status altogether (e.g. `Draft` should never jump straight to
+`Approved`). Doing this with hardcoded plugin logic means every new rule requires
+a code change, a rebuild, and a redeploy. This project externalizes both kinds of
+logic into configuration tables so business rules can evolve independently of the
+plugin binary:
+
+- **`FieldLockEnforcer`** — locks specific fields while a record is in a given
+  status (see `cfg_fieldlockrule` / `cfg_lockedfield`).
+- **`StateTransitionEnforcer`** — enforces a full status-reason state machine,
+  defined as a [Mermaid `stateDiagram-v2`](https://mermaid.js.org/syntax/stateDiagram.html)
+  document (see `cfg_statetransitiondefinition`). The Mermaid text doubles as
+  both human-readable workflow documentation (renders natively in GitHub, Azure
+  DevOps wikis, VS Code, etc.) and the executable configuration the plugin
+  enforces — no separate workflow DSL required.
 
 ## Architecture
 
@@ -51,6 +62,54 @@ plugin is what actually guarantees the field is protected.
    that security role, the rule is skipped entirely for that request.
 
 See `docs/config-schema.md` for the full table schema and a sample configuration.
+
+### `StateTransitionEnforcer`: Mermaid-defined state machines
+
+Rather than inventing another workflow DSL, `StateTransitionEnforcer` uses a
+Mermaid `stateDiagram-v2` document (stored in `cfg_statetransitiondefinition`)
+as both the visual documentation of a workflow and its executable
+configuration:
+
+```mermaid
+stateDiagram-v2
+
+Draft --> Submitted : Submit
+Submitted --> Under Review : Review
+Under Review --> Approved : Approve/Manager
+Under Review --> Rejected : Reject/Manager/cfg_budget<10000
+Rejected --> Draft : Resubmit
+```
+
+How it works:
+
+1. On `Update`, if `statuscode` isn't part of the request, or its value isn't
+   actually changing, the plugin does nothing.
+2. It loads the active `cfg_statetransitiondefinition` row(s) for the current
+   entity, parses their Mermaid text into an in-memory adjacency graph, and
+   caches it for 5 minutes.
+3. It resolves the old and new `statuscode` values to their display labels
+   (via the entity's `statuscode` option set metadata, also cached) — Mermaid
+   state names are matched against these labels, so admins never need to know
+   numeric status reason values.
+4. It looks up the edge `oldLabel -> newLabel` in the graph. If no such edge
+   exists at all, the transition is rejected outright.
+5. If the edge exists, each transition label — using the convention
+   `Action/Role/Condition` (all optional) — is checked: `Role` is a security
+   role the initiating user must hold; `Condition` is a simple comparison like
+   `cfg_budget<10000` evaluated against the record (`Target`, falling back to
+   `PreImage`). If multiple parallel edges exist between the same two states
+   (e.g. different roles), the transition is allowed if **any** edge's
+   requirements are satisfied.
+6. Any rejection throws `InvalidPluginExecutionException` naming the invalid
+   transition, or the unmet role/condition requirement.
+
+This one plugin enforces the workflow across **every** channel that can write to
+Dataverse — model-driven app, canvas app, Power Automate, n8n, the Web API, Excel
+Online import, bulk data updates — not just wherever a form's Business Process
+Flow or Status Reason Transition rules happen to be wired up.
+
+See `docs/config-schema.md` for the full table schema, the Mermaid label syntax,
+and a sample configuration.
 
 ## Importable solution package
 
@@ -117,28 +176,33 @@ the DLL as a build artifact and publishes it to a tagged GitHub Release
 
 ## Configuration tables
 
-Lock rules are defined in two tables — see [`docs/config-schema.md`](docs/config-schema.md)
-for full column definitions and a sample record:
+Rules are defined across three tables — see [`docs/config-schema.md`](docs/config-schema.md)
+for full column definitions and sample records:
 
 - **`cfg_fieldlockrule`** — one row per (entity, status reason) rule, including an
   optional bypass security role.
 - **`cfg_lockedfield`** — one row per field locked by a given rule, linked back to
   its parent rule via `cfg_fieldlockrule`.
+- **`cfg_statetransitiondefinition`** — one row per entity's status-reason state
+  machine, expressed as a Mermaid `stateDiagram-v2` document.
 
-No code changes are needed to add a new rule: create a `cfg_fieldlockrule` row,
-add its `cfg_lockedfield` children, and activate it.
+No code changes are needed to add a new rule: create the relevant config row(s)
+and activate them.
 
-## Registering the plugin
+## Registering the plugins
 
-You can register the plugin either with the **Plugin Registration Tool** or the
-**Dataverse Web API**.
+Both `FieldLockEnforcer` and `StateTransitionEnforcer` live in the same assembly
+(`FieldLockPlugin.dll`) and are registered the same way — with the **Plugin
+Registration Tool** or the **Dataverse Web API**. Register each plugin type as a
+separate step (on the same `Update` message/entity, if both apply).
 
 ### Option A: Plugin Registration Tool
 
 1. Build `FieldLockPlugin.dll` in `Release` configuration.
 2. Open the Plugin Registration Tool and connect to your environment.
-3. **Register a New Assembly**, selecting `FieldLockPlugin.dll`.
-4. On the `Contoso.Dataverse.Plugins.FieldLockEnforcer` type, **Register New Step**:
+3. **Register a New Assembly**, selecting `FieldLockPlugin.dll`. This registers
+   both plugin types (`FieldLockEnforcer` and `StateTransitionEnforcer`).
+4. On the relevant plugin type, **Register New Step**:
    - Message: `Update`
    - Primary Entity: the entity you want to protect (e.g. `contoso_claim`), or
      register one step per entity referenced by your rules.
@@ -146,29 +210,37 @@ You can register the plugin either with the **Plugin Registration Tool** or the
    - Execution Mode: `Synchronous`
 5. On the new step, **Register New Image**:
    - Image Type: `Pre Image`
-   - Entity Alias / Name: `PreImage` (must match exactly — this is the alias the
-     plugin looks up)
-   - Attributes: `statuscode` **plus every attribute referenced by any
-     `cfg_lockedfield.cfg_fieldlogicalname` for that entity**. If you add a new
-     locked field later, update this image too.
+   - Entity Alias / Name: `PreImage` (must match exactly — this is the alias
+     both plugins look up)
+   - Attributes:
+     - For `FieldLockEnforcer`: `statuscode` **plus every attribute referenced
+       by any `cfg_lockedfield.cfg_fieldlogicalname` for that entity**.
+     - For `StateTransitionEnforcer`: `statuscode` **plus every field
+       referenced by any transition `Condition` for that entity** (e.g.
+       `cfg_budget` for a condition like `cfg_budget<10000`).
+   - If both plugins are registered on the same entity, register one shared
+     `PreImage` containing the union of both attribute lists.
 
 ### Option B: Dataverse Web API
 
 1. Upload the assembly via `POST /api/data/v9.2/pluginassemblies` (base64-encoded
    `content`, `isolationmode = 2` for sandbox).
-2. Create the plugin type record (`plugintype`) referencing the assembly, with
-   `typename = Contoso.Dataverse.Plugins.FieldLockEnforcer`.
-2. Create an `sdkmessageprocessingstep` for the `Update` message on the target
+2. Create a plugin type record (`plugintype`) referencing the assembly for each
+   plugin you want to register, with `typename` set to
+   `Contoso.Dataverse.Plugins.FieldLockEnforcer` and/or
+   `Contoso.Dataverse.Plugins.StateTransitionEnforcer`.
+3. Create an `sdkmessageprocessingstep` for the `Update` message on the target
    entity, with `stage = 20` (Pre-Operation) and `mode = 0` (Synchronous).
-3. Create an `sdkmessageprocessingstepimage` on that step with
+4. Create an `sdkmessageprocessingstepimage` on that step with
    `imagetype = 0` (Pre Image), `entityalias = PreImage`, and `attributes`
-   listing `statuscode` plus every field any active rule locks for that entity.
+   listing `statuscode` plus every field referenced by that plugin's active
+   configuration for the entity.
 
-> ⚠️ **PreImage requirement**: The plugin will throw immediately if the `PreImage`
-> is missing. Whenever you add a new locked field to `cfg_lockedfield`, remember to
-> also add that field's logical name to the registered PreImage attribute list —
-> otherwise the "before" value the plugin compares against will be unavailable and
-> the field will effectively be un-enforceable.
+> ⚠️ **PreImage requirement**: Both plugins throw immediately if the `PreImage`
+> is missing. Whenever you add a new locked field or transition condition,
+> remember to also add the referenced field's logical name to the registered
+> PreImage attribute list — otherwise the "before" value the plugin compares
+> against will be unavailable and the rule will effectively be un-enforceable.
 
 ## License
 

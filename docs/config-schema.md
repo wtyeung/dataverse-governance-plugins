@@ -1,8 +1,8 @@
 # Configuration Schema
 
-Field lock rules are stored entirely in Dataverse configuration tables, so new rules
-can be created (or existing ones changed) by an administrator without redeploying
-the plugin.
+Field lock rules and status-transition rules are stored entirely in Dataverse
+configuration tables, so new rules can be created (or existing ones changed) by
+an administrator without redeploying the plugin.
 
 ## `cfg_fieldlockrule` (parent)
 
@@ -68,3 +68,84 @@ the acting user holds the `Claims Administrator` security role.
 - `cfg_statusreasonvalue` must match the underlying integer value of the
   `statuscode` option set on the target entity, not its label.
 - If `cfg_bypasssecurityrole` is left blank, the rule cannot be bypassed by any role.
+
+---
+
+## `cfg_statetransitiondefinition`
+
+One row per state machine definition. Each row defines the *entire* set of valid
+status-reason transitions for one entity, expressed as a [Mermaid `stateDiagram-v2`](https://mermaid.js.org/syntax/stateDiagram.html)
+document. The Mermaid text is both human-readable documentation (renders as a
+diagram in GitHub, Azure DevOps wikis, VS Code, etc.) and the executable
+configuration enforced by the `StateTransitionEnforcer` plugin.
+
+| Column                     | Type              | Description                                                                                     |
+|----------------------------|-------------------|---------------------------------------------------------------------------------------------------|
+| `cfg_statetransitiondefinitionid` | Unique Identifier | Primary key.                                                                              |
+| `cfg_name`                 | Text              | Primary name, e.g. `Housing Application Workflow`.                                              |
+| `cfg_entitylogicalname`    | Text              | Logical name of the target entity, e.g. `contoso_housingapplication`.                            |
+| `cfg_mermaiddefinition`    | Multiline Text    | The `stateDiagram-v2` document defining valid transitions (see syntax below).                    |
+| `cfg_isactive`             | Yes/No            | Whether this definition is enforced. Inactive rows are ignored by the plugin.                    |
+| `cfg_version`              | Whole Number       | (Optional) version number, for change-tracking/documentation purposes only.                     |
+
+### Mermaid syntax and transition labels
+
+State names are matched **case-insensitively against the display labels** of the
+entity's `statuscode` option set, so admins editing the diagram never need to know
+numeric status reason values, e.g.:
+
+```mermaid
+stateDiagram-v2
+
+Draft --> Submitted : Submit
+Submitted --> Under Review : Review
+Under Review --> Approved : Approve/Manager
+Under Review --> Rejected : Reject/Manager/cfg_budget<10000
+Rejected --> Draft : Resubmit
+```
+
+Each transition's optional label (after `:`) follows the convention
+`Action/Role/Condition`, where every segment is optional:
+
+| Segment     | Meaning                                                                                          |
+|-------------|---------------------------------------------------------------------------------------------------|
+| `Action`    | Free-text description of the transition (e.g. for surfacing as a button label). Informational only, not enforced. |
+| `Role`      | Name of a Dataverse security role. If present, the initiating user must hold this role for the transition to be allowed. |
+| `Condition` | A simple comparison `<field><op><number>` (operators: `< <= > >= == !=`) evaluated against the field's value on the record (Target, falling back to PreImage). Supports Money, whole number, and decimal fields. |
+
+If a transition has no label, it's allowed unconditionally for any user. Multiple
+edges between the same two states (e.g. one requiring `Manager`, another
+requiring a different role) are treated as alternatives — the transition is
+allowed if **any** matching edge's requirements are satisfied.
+
+Pseudo-states (`[*] --> Draft`) are valid Mermaid but are ignored by the parser
+since they don't correspond to an existing status reason.
+
+### Sample configuration
+
+```json
+{
+  "cfg_statetransitiondefinition": {
+    "cfg_name": "Housing Application Workflow",
+    "cfg_entitylogicalname": "contoso_housingapplication",
+    "cfg_isactive": true,
+    "cfg_version": 1,
+    "cfg_mermaiddefinition": "stateDiagram-v2\n\nDraft --> Submitted : Submit\nSubmitted --> Under Review : Review\nUnder Review --> Approved : Approve/Manager\nUnder Review --> Rejected : Reject/Manager\nRejected --> Draft : Resubmit"
+  }
+}
+```
+
+### Notes
+
+- Like the field lock plugin, the parsed state machine (and the statuscode
+  label ↔ value map) is cached in-memory for 5 minutes per entity.
+- If multiple active `cfg_statetransitiondefinition` rows exist for the same
+  entity, their graphs are merged (union of edges) — in practice, keep exactly
+  one active definition per entity to avoid confusion.
+- If a transition isn't found in the graph at all, the plugin throws
+  immediately. If the transition exists but its role/condition requirements
+  aren't met, the plugin throws a more specific error naming the unmet
+  requirement.
+- The plugin only validates when `statuscode` is actually part of the Update
+  request and its value is changing — it does not interfere with other field
+  updates.
